@@ -140,12 +140,16 @@ wav をブラウザ標準の音声デコード（Web Audio API）で読まない
 Cloudflare Web分析（Cookieを使わない）をダッシュボードで有効にします。HPと同じく自動注入が効けばコード変更は不要です。
 **HP・ボツ供養とは別サイト・別トークンとして登録**してください（数字が混ざらないように）。
 
-### 公開するとき（検証が済んでから）
+### 検索結果への表示
 
-試作・検証のあいだは検索結果に出ないようにしてあります。公開するときは:
+検索結果に出る設定です（試作・検証のあいだに入れていた `noindex` は外しました）。
+告知はせず、`40hzp.com/mix/guide` からリンクを1本張って公開する方針です。
 
-1. `public/index.html` の `<meta name="robots" content="noindex">` の行を消す
-2. `40hzp.com/mix/guide` からリンクを1本張る
+検索結果から一時的に外したくなったら、`public/index.html` の `<head>` の中に次の1行を足します。
+
+```html
+<meta name="robots" content="noindex">
+```
 
 ---
 
