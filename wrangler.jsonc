@@ -11,13 +11,14 @@
   },
 
   // 記録の置き場（Cloudflare D1）。
-  // database_id を書いていないので、初めてデプロイしたときに wrangler が
-  // 「reccheck」という名前のデータベースを自動で作って繋ぐ。
-  // 自動で作れなかったときは README「記録の準備」の手順で作り、ID をここに足す。
+  // 初めてのデプロイで wrangler が「reccheck」という名前で自動で作ったデータベースの ID。
+  // ID を書いておくと、Worker を作り直しても空の別のデータベースが作られず、今の記録に繋がり続ける。
+  // データベースを作り直したときは、ここの database_id を新しいものに差し替える。
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "reccheck"
+      "database_name": "reccheck",
+      "database_id": "e1706e96-6217-4d4b-bfb2-474a9381e387"
     }
   ],
 
