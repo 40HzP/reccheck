@@ -4,7 +4,7 @@
  *
  * 計るもの
  * - チャンネルごとの最大値（プラス側・マイナス側を別々に）
- * - 最大値に張り付いて続いているサンプルの箇所数（音割れ）
+ * - 最大値に張り付いて続いているサンプルの箇所数とサンプル数（音割れ）
  * - 0dBFS を超えたサンプル数（32bit float 用）
  * - 短い区間ごとの平均の音量（頭出し・ノイズ・中身の判定に使う）
  * - 左右の差（ステレオのとき）
@@ -30,10 +30,12 @@ export class Meter {
         posPeak: -Infinity,
         posRun: 0,
         posEvents: 0,
+        posSamples: 0,
         posFirst: -1,
         negPeak: Infinity,
         negRun: 0,
         negEvents: 0,
+        negSamples: 0,
         negFirst: -1,
         sumSq: 0,
       });
@@ -85,12 +87,16 @@ export class Meter {
             st.posPeak = raw;
             st.posRun = 0;
             st.posEvents = 0;
+            st.posSamples = 0;
             st.posFirst = -1;
           }
           st.posRun++;
           if (st.posRun === minRun) {
             st.posEvents++;
+            st.posSamples += minRun;
             if (st.posFirst < 0) st.posFirst = frame - minRun + 1;
+          } else if (st.posRun > minRun) {
+            st.posSamples++;
           }
         } else {
           st.posRun = 0;
@@ -102,12 +108,16 @@ export class Meter {
             st.negPeak = raw;
             st.negRun = 0;
             st.negEvents = 0;
+            st.negSamples = 0;
             st.negFirst = -1;
           }
           st.negRun++;
           if (st.negRun === minRun) {
             st.negEvents++;
+            st.negSamples += minRun;
             if (st.negFirst < 0) st.negFirst = frame - minRun + 1;
+          } else if (st.negRun > minRun) {
+            st.negSamples++;
           }
         } else {
           st.negRun = 0;
@@ -156,8 +166,8 @@ export class Meter {
       const neg = st.negPeak === Infinity ? 0 : Math.max(0, -st.negPeak * scale);
       return {
         // 張り付き判定はプラス側・マイナス側それぞれの最大値で行う
-        pos: { peak: pos, events: st.posEvents, firstFrame: st.posFirst },
-        neg: { peak: neg, events: st.negEvents, firstFrame: st.negFirst },
+        pos: { peak: pos, events: st.posEvents, samples: st.posSamples, firstFrame: st.posFirst },
+        neg: { peak: neg, events: st.negEvents, samples: st.negSamples, firstFrame: st.negFirst },
         peak: Math.max(pos, neg),
         meanSquare: frames > 0 ? st.sumSq / frames : 0,
       };

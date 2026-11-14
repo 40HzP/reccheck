@@ -3,6 +3,27 @@
  * 画面には触らない。しきい値と文言はすべて config から読む。
  */
 import { depthLabel } from "./wav.js";
+import { voiceMask, estimateNoise, estimateRoom } from "./voice.js";
+
+/**
+ * 判定ロジックの版。計算のしかたを変えたら1つ上げる。
+ * しきい値の変更は、記録の app_version に config の中身から自動で反映される（appVersion）。
+ */
+export const LOGIC_VERSION = 2;
+
+/** 判定に効く設定だけを取り出して短い印にする。文言を直しただけでは変わらない。 */
+const TEXT_KEYS = new Set(["name", "group", "detail", "fix", "hint", "note", "mismatch", "instUnreadable", "excludedNote"]);
+export function appVersion(config) {
+  const src = JSON.stringify({ items: config.items, windowMs: config.windowMs }, (key, value) =>
+    TEXT_KEYS.has(key) ? undefined : value
+  );
+  let h = 0x811c9dc5;
+  for (let i = 0; i < src.length; i++) {
+    h ^= src.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `${LOGIC_VERSION}-${h.toString(16).padStart(8, "0")}`;
+}
 
 /** 段階の重さ。結果の見出しは、いちばん重いものに合わせる。 */
 const SEVERITY = { 3: 4, 2: 3, check: 2, 1: 1, skip: 0 };
@@ -61,28 +82,114 @@ function derive(analysis, config) {
   const content = item("content");
   const cueing = item("cueing");
   const noise = item("noise");
+  const room = item("room");
+  const clipping = item("clipping");
 
   const peak = Math.max(0, ...meter.channels.map((c) => c.peak));
   const peakDb = ampToDb(peak);
   const silent = peakDb < (content.silentPeakDb ?? -50);
 
   const winDb = Array.from(meter.windows, meanSquareToDb);
-  const floorLimit = noise.digitalSilenceDb ?? -90;
-  const audible = winDb.filter((d) => d >= floorLimit).sort((a, b) => a - b);
-  const noiseDb = audible.length ? percentile(audible, noise.percentile ?? 10) : -Infinity;
+  const digitalSilenceDb = noise.digitalSilenceDb ?? -90;
 
-  // いちばん静かなところでも声と同じくらい大きいなら、歌っていないところは
-  // 見つかっていない（休みのない音源や、ゲートで隙間を消した音源）。
-  const voiceDb = cueing.voiceDb ?? -40;
-  const quietFound = Number.isFinite(noiseDb) && noiseDb < voiceDb;
+  // 雑音のおおよその大きさ。声の区間を分ける基準を決めるためだけに使う。
+  // （雑音の判定そのものは、声の無い区間だけで測った値を使う）
+  const audible = winDb.filter((d) => d >= digitalSilenceDb).sort((a, b) => a - b);
+  const roughNoiseDb = audible.length ? percentile(audible, noise.percentile ?? 10) : -Infinity;
 
   // 声が始まったとみなす音量。ノイズが大きい録音では、ノイズより一段大きい音にする。
+  // いちばん静かなところでも voiceDb より大きいなら、静かなところは見つかっていない。
+  const voiceDb = cueing.voiceDb ?? -40;
   let onsetDb = voiceDb;
-  if (quietFound) onsetDb = Math.max(onsetDb, noiseDb + (cueing.aboveNoiseDb ?? 12));
-  const firstVoice = winDb.findIndex((d) => d >= onsetDb);
+  if (Number.isFinite(roughNoiseDb) && roughNoiseDb < voiceDb) {
+    onsetDb = Math.max(onsetDb, roughNoiseDb + (cueing.aboveNoiseDb ?? 12));
+  }
+  const voice = voiceMask(winDb, onsetDb);
+  const firstVoice = voice.indexOf(1);
   const leadSec = firstVoice < 0 ? null : firstVoice * meter.windowSec;
 
-  return { wav, meter, peak, peakDb, silent, noiseDb, quietFound, leadSec, duration: wav.duration };
+  const quiet = estimateNoise(winDb, voice, {
+    windowSec: meter.windowSec,
+    marginSec: noise.marginSec ?? 0.3,
+    minQuietSec: noise.minQuietSec ?? 1,
+    digitalSilenceDb,
+  });
+
+  const roomEstimate = estimateRoom(winDb, voice, quiet.db, {
+    windowSec: meter.windowSec,
+    digitalSilenceDb,
+    lookbackSec: room.lookbackSec ?? 0.2,
+    minGapSec: room.minGapSec ?? 0.3,
+    maxTailSec: room.maxTailSec ?? 1,
+    startDropDb: room.startDropDb ?? 5,
+    endDropDb: room.endDropDb ?? 25,
+    minRangeDb: room.minRangeDb ?? 30,
+    minCount: room.minCount ?? 3,
+    fastDbPerSec: room.fastDbPerSec ?? 150,
+    slowDbPerSec: room.slowDbPerSec ?? 70,
+  });
+
+  // 音割れ。最大値が小さすぎる側は数えない（静かな音での誤検出よけ）
+  let clipCount = 0;
+  let clipSamples = 0;
+  let clipFirst = -1;
+  for (const ch of meter.channels) {
+    for (const side of [ch.pos, ch.neg]) {
+      if (ampToDb(side.peak) < (clipping.ignoreBelowDb ?? -12)) continue;
+      clipCount += side.events;
+      clipSamples += side.samples;
+      if (side.firstFrame >= 0 && (clipFirst < 0 || side.firstFrame < clipFirst)) clipFirst = side.firstFrame;
+    }
+  }
+
+  return {
+    wav,
+    meter,
+    peak,
+    peakDb,
+    silent,
+    leadSec,
+    quiet,
+    room: roomEstimate,
+    clipCount,
+    clipSamples,
+    clipFirst,
+    duration: wav.duration,
+  };
+}
+
+const round = (value, digits) => {
+  if (value == null || !Number.isFinite(value)) return null;
+  const f = 10 ** digits;
+  return Math.round(value * f) / f;
+};
+
+/**
+ * 記録と「前回との比較」に使う数値。名前は記録の列名と同じにしている。
+ * wav 以外では、分かるもの（形式）だけが入る。
+ */
+function measuresOf(analysis, d) {
+  const { sniff, wav } = analysis;
+  const m = {
+    format: sniff.kind === "wav" && wav && !wav.decodable ? "wav-compressed" : sniff.kind,
+    sample_rate: wav ? wav.sampleRate : null,
+    bit_depth: wav && wav.decodable ? depthLabel(wav) : null,
+    channels: wav ? wav.channels : null,
+    peak_dbfs: null,
+    clip_samples: null,
+    noise_dbfs: null,
+    noise_excluded: null,
+    room: null,
+    duration_sec: wav ? round(wav.duration, 2) : null,
+  };
+  if (d) {
+    m.peak_dbfs = d.peak > 0 ? round(d.peakDb, 1) : null;
+    m.clip_samples = d.silent ? null : d.clipSamples;
+    m.noise_dbfs = d.silent ? null : round(d.quiet.db, 1);
+    m.noise_excluded = d.silent ? null : d.quiet.excluded;
+    m.room = d.silent ? null : d.room.level;
+  }
+  return m;
 }
 
 /* ---------------- 項目ごとの判定 ---------------- */
@@ -122,19 +229,10 @@ const RULES = {
 
   clipping(cfg, d) {
     if (d.silent) return { skip: "noSound" };
-    let count = 0;
-    let first = -1;
-    for (const ch of d.meter.channels) {
-      for (const side of [ch.pos, ch.neg]) {
-        if (ampToDb(side.peak) < cfg.ignoreBelowDb) continue;
-        count += side.events;
-        if (side.firstFrame >= 0 && (first < 0 || side.firstFrame < first)) first = side.firstFrame;
-      }
-    }
-    if (count >= cfg.minCount) {
+    if (d.clipCount >= cfg.minCount) {
       return {
         outcome: "clipped",
-        vars: { count, time: formatSec(Math.max(0, first) / d.meter.sampleRate) },
+        vars: { count: d.clipCount, time: formatSec(Math.max(0, d.clipFirst) / d.meter.sampleRate) },
       };
     }
     if (d.wav.codec === "float" && d.meter.overCount > 0) return { outcome: "overButIntact", vars: {} };
@@ -150,10 +248,18 @@ const RULES = {
   },
 
   noise(cfg, d) {
-    if (d.silent || !Number.isFinite(d.noiseDb)) return { skip: "noSound" };
-    const vars = { noise: formatDb(d.noiseDb) };
-    if (!d.quietFound) return { outcome: "notFound", vars };
-    return { outcome: d.noiseDb > cfg.maxDb ? "high" : "ok", vars };
+    if (d.silent) return { skip: "noSound" };
+    const q = d.quiet;
+    if (q.status !== "ok") return { outcome: q.status, vars: {} };
+    const vars = { noise: formatDb(q.db) };
+    const notes = q.excluded && cfg.excludedNote ? [cfg.excludedNote] : [];
+    return { outcome: q.db > cfg.maxDb ? "high" : "ok", vars, notes };
+  },
+
+  room(cfg, d) {
+    if (d.silent) return { skip: "noSound" };
+    if (d.room.status !== "ok") return { outcome: "notMeasured", vars: {} };
+    return { outcome: d.room.level, vars: {} };
   },
 
   sampleRate(cfg, d) {
@@ -253,5 +359,7 @@ export function judge(analysis, inst, config) {
     counts,
     summary: config.summary[worst] || "",
     duration: analysis.wav ? analysis.wav.duration : null,
+    measures: measuresOf(analysis, d),
+    stages: Object.fromEntries(items.map((it) => [it.id, it.stage])),
   };
 }

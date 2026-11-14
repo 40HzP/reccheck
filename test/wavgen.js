@@ -114,20 +114,31 @@ export function noiseSource(seed = 1) {
 }
 
 /**
- * 歌っているような信号。startSec から endSec まで、2秒歌って0.5秒休むを繰り返す。
+ * 歌っているような信号。startSec から endSec まで、phraseSec 歌って gapSec 休むを繰り返す。
  * 声は 220Hz と倍音、休みはノイズだけ。
+ * tailRt60 を渡すと、フレーズの終わりに響き（その秒数で 60dB 下がる減衰）が残る。
  */
-export function vocalLike({ startSec = 0, endSec = Infinity, amp = 0.3, noiseAmp = 0.0003, seed = 7 } = {}) {
+export function vocalLike({
+  startSec = 0,
+  endSec = Infinity,
+  amp = 0.3,
+  noiseAmp = 0.0003,
+  seed = 7,
+  phraseSec = 2,
+  gapSec = 0.5,
+  tailRt60 = 0,
+} = {}) {
   const rnd = noiseSource(seed);
+  const period = phraseSec + gapSec;
   return (f, c, sr) => {
     const t = f / sr;
     let v = noiseAmp * rnd();
     if (t >= startSec && t < endSec) {
-      const inPhrase = (t - startSec) % 2.5 < 2;
-      if (inPhrase) {
-        const w = 2 * Math.PI * 220 * t;
-        v += amp * (0.7 * Math.sin(w) + 0.2 * Math.sin(2 * w) + 0.1 * Math.sin(3 * w));
-      }
+      const pos = (t - startSec) % period;
+      const w = 2 * Math.PI * 220 * t;
+      const tone = 0.7 * Math.sin(w) + 0.2 * Math.sin(2 * w) + 0.1 * Math.sin(3 * w);
+      if (pos < phraseSec) v += amp * tone;
+      else if (tailRt60 > 0) v += amp * tone * 10 ** ((-3 * (pos - phraseSec)) / tailRt60);
     }
     return v;
   };

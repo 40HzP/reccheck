@@ -4,6 +4,7 @@
   "type": "module",
   "description": "歌ってみたのボーカル音源を、MIXに出す前にブラウザの中で確認するサイト",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "export-csv": "node scripts/export-csv.mjs"
   }
 }
