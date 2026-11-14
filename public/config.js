@@ -492,7 +492,7 @@ export default {
      * Turnstile の Site Key（人に見せてよい値）。README「記録の準備」を参照。
      * 空のあいだは、記録の欄と「記録を消す」を画面に出さない。
      */
-    turnstileSiteKey: "",
+    turnstileSiteKey: "0x4AAAAAAGAdacSHHg80F0yV",
 
     endpoint: "/api/records",
     deleteEndpoint: "/api/records/delete",
