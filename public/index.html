@@ -33,7 +33,7 @@
     <h1 class="page-head__title">歌ってみた録音チェッカー</h1>
     <p class="prose">録ったボーカルのファイルを選ぶと、形式・頭出し・音割れなどをその場で確かめて、直し方を1行で返します。</p>
     <ul class="promises">
-      <li>ファイルはこの端末の中で読むだけです。どこにも送らず、保存もしません。</li>
+      <li>ファイルはこの端末の中で読むだけです。ファイルはどこにも送らず、保存もしません。結果の下の『記録する』を押したときだけ、判定の数値と、書いてもらった機材名を匿名で記録します。前回の結果はこのブラウザの中にだけ残ります。</li>
       <li>歌の上手い下手は見ません。見るのはデータの形だけです。</li>
     </ul>
   </header>
@@ -74,6 +74,7 @@
     <p class="result__file" id="result-file"></p>
     <p class="summary" id="result-summary"></p>
     <div id="result-groups"></div>
+    <div id="result-compare"></div>
     <ul class="notes" id="result-notes"></ul>
   </section>
 
@@ -81,6 +82,11 @@
     <h2 class="h2" id="next-heading"></h2>
     <ul class="exits" id="exits"></ul>
   </section>
+
+  <!-- 記録の欄は出口（次にすること）の後ろ。MIX依頼への導線を先に見せる -->
+  <section class="record" id="record" aria-labelledby="record-heading" hidden></section>
+
+  <section class="record-info" id="record-info" aria-labelledby="record-info-heading" hidden></section>
 
   <noscript>
     <p class="error">このページは JavaScript を使ってファイルを読みます。ブラウザの設定で JavaScript を有効にしてください。</p>

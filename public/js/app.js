@@ -4,7 +4,9 @@
  */
 import config from "../config.js";
 import { analyzeFile, wavDurationOf } from "./analyze.js";
-import { judge, fill, formatSec, formatSize } from "./judge.js";
+import { judge, fill, appVersion, formatDb, formatRate, formatSec, formatSize } from "./judge.js";
+import { store } from "./store.js";
+import { renderRecordForm, renderRecordInfo } from "./record.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,6 +20,9 @@ const STAGE_MARK = { 1: "✓", 2: "△", 3: "×", check: "?", skip: "−" };
 const state = {
   vocal: null, // { file, analysis }
   inst: null, // { file, duration }
+  result: null, // いちばん新しい判定（記録はこれを送る）
+  previous: null, // このブラウザに残っていた前回の結果（比べるため）
+  savedAt: null, // 今回の結果を残した日時
   run: 0,
   instRun: 0,
   worker: null,
@@ -139,9 +144,11 @@ async function onVocal(file) {
   stopWorker();
   const run = ++state.run;
   state.vocal = null;
+  state.result = null;
   showChosen("vocal-picker", file);
   showError("");
   $("result").hidden = true;
+  $("record").hidden = true;
   $("next").hidden = true;
 
   const limit = config.maxFileMB * 1024 * 1024;
@@ -159,7 +166,10 @@ async function onVocal(file) {
     });
     if (run !== state.run) return;
     state.vocal = { file, analysis };
-    render({ focus: true });
+    // 前回の結果は、今回の結果で上書きする前に読んでおく
+    state.previous = store.loadLast();
+    state.savedAt = new Date().toISOString();
+    render({ focus: true, fresh: true });
   } catch (e) {
     if (run !== state.run) return;
     console.error(e);
@@ -204,7 +214,7 @@ async function onInst(file) {
   if (run !== state.instRun) return; // 読んでいるあいだに選び直された・外された
   state.inst = { file, duration };
   showChosen("inst-picker", file, duration != null ? `長さ ${formatSec(duration)}` : "長さを読み取れませんでした");
-  if (state.vocal) render({ focus: false });
+  if (state.vocal) render({ focus: false, fresh: false });
 }
 
 function clearInst() {
@@ -214,7 +224,7 @@ function clearInst() {
   showChosen("inst-picker", null);
   $("inst-clear").hidden = true;
   $("inst-input").focus();
-  if (state.vocal) render({ focus: false });
+  if (state.vocal) render({ focus: false, fresh: false });
 }
 
 /* ---------------- 結果の表示 ---------------- */
@@ -241,18 +251,98 @@ function renderItem(item) {
   return el("li", { class: "item", "data-stage": String(item.stage) }, children);
 }
 
-function render({ focus }) {
+/* ---------------- 前回との比較 ---------------- */
+
+function formatMeasure(key, value) {
+  const C = config.compare;
+  if (value == null) return C.empty;
+  const item = (id) => config.items.find((i) => i.id === id) || { outcomes: {} };
+  switch (key) {
+    case "format":
+      return value === "wav-compressed" ? "wav（圧縮）" : String(value);
+    case "sample_rate":
+      return formatRate(value);
+    case "channels": {
+      const o = item("channels").outcomes;
+      if (value === 1) return o.mono ? o.mono.detail : "モノラル";
+      if (value === 2) return "ステレオ";
+      return fill(o.multi ? o.multi.detail : "{count}チャンネル", { count: value });
+    }
+    case "duration_sec":
+      return formatSec(value);
+    case "peak_dbfs":
+    case "noise_dbfs":
+      return formatDb(value);
+    case "room": {
+      const o = item("room").outcomes[value];
+      return o ? o.detail : String(value);
+    }
+    default:
+      return String(value);
+  }
+}
+
+function formatWhen(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderCompare(previous, current) {
+  const box = $("result-compare");
+  if (!previous) {
+    box.replaceChildren();
+    return;
+  }
+  const C = config.compare;
+  const rows = C.rows.map((row) => {
+    const before = formatMeasure(row.key, previous.measures[row.key]);
+    const now = formatMeasure(row.key, current.measures[row.key]);
+    return el("tr", { "data-changed": before !== now ? "true" : null }, [
+      el("th", { scope: "row", text: row.label }),
+      el("td", { text: before }),
+      el("td", { text: now }),
+    ]);
+  });
+  box.replaceChildren(
+    el("section", { class: "group compare", "aria-labelledby": "compare-heading" }, [
+      el("h3", { class: "h3", id: "compare-heading", text: C.heading }),
+      el("p", {
+        class: "group__lead",
+        text: fill(C.lead, { date: formatWhen(previous.savedAt), file: previous.fileName || "" }),
+      }),
+      el("table", { class: "compare__table" }, [
+        el("thead", {}, [
+          el("tr", {}, [
+            el("th", { scope: "col" }, [el("span", { class: "visually-hidden", text: "項目" })]),
+            ...C.columns.map((c) => el("th", { scope: "col", text: c })),
+          ]),
+        ]),
+        el("tbody", {}, rows),
+      ]),
+    ])
+  );
+}
+
+function render({ focus, fresh }) {
   const { file, analysis } = state.vocal;
   const result = judge(analysis, state.inst ? { duration: state.inst.duration } : null, config);
 
   setProgress(null);
   if (result.error) {
+    state.result = null;
     $("result").hidden = true;
+    $("record").hidden = true;
     $("next").hidden = true;
     showError(result.error);
     return;
   }
   showError("");
+  state.result = result;
+
+  // 今回の結果をこのブラウザに残す（次に確かめたときの「前回」になる）
+  store.saveLast({ savedAt: state.savedAt, fileName: file.name, measures: result.measures, stages: result.stages });
 
   const info = [file.name];
   if (result.duration != null) info.push(formatSec(result.duration));
@@ -281,7 +371,18 @@ function render({ focus }) {
     })
   );
 
+  renderCompare(state.previous, result);
+
   $("result-notes").replaceChildren(...config.notes.map((n) => el("li", {}, [el("span", { text: n })])));
+
+  // 記録の欄は、ファイルを選び直したときだけ作り直す（伴奏の出し入れで入力が消えないように）
+  if (fresh) {
+    renderRecordForm($("record"), {
+      getCurrent: () => state.result,
+      hasPrevious: Boolean(state.previous),
+      appVersion: appVersion(config),
+    });
+  }
 
   $("next-heading").textContent = config.exits.heading;
   $("exits").replaceChildren(
@@ -350,6 +451,7 @@ function wirePicker(pickerId, inputId, handler) {
 window.addEventListener("dragover", (e) => e.preventDefault());
 window.addEventListener("drop", (e) => e.preventDefault());
 
+renderRecordInfo($("record-info"));
 wirePicker("vocal-picker", "vocal-input", onVocal);
 wirePicker("inst-picker", "inst-input", onInst);
 $("inst-clear").addEventListener("click", clearInst);

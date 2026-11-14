@@ -1,12 +1,30 @@
 {
-  // 静的ファイルだけのWorker。public/ の中身がそのまま公開される
+  // 静的ファイル（public/）と、記録の受け口（worker/index.js）を1つのWorkerで出す。
+  // public/ にあるファイルは Assets がそのまま返し、
+  // それ以外（/api/records など）だけが worker/index.js に来る。
   "name": "reccheck",
+  "main": "worker/index.js",
   "compatibility_date": "2026-10-01",
   "assets": {
-    "directory": "./public"
+    "directory": "./public",
+    "binding": "ASSETS"
   },
+
+  // 記録の置き場（Cloudflare D1）。
+  // database_id を書いていないので、初めてデプロイしたときに wrangler が
+  // 「reccheck」という名前のデータベースを自動で作って繋ぐ。
+  // 自動で作れなかったときは README「記録の準備」の手順で作り、ID をここに足す。
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "reccheck"
+    }
+  ],
+
   // デプロイ時に reccheck.40hzp.com を自動でこのWorkerに割り当てる
   "routes": [
     { "pattern": "reccheck.40hzp.com", "custom_domain": true }
   ]
+
+  // TURNSTILE_SECRET_KEY は secret として Cloudflare の画面で登録する。ここには書かない。
 }

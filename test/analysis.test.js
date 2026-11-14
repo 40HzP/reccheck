@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import config from "../public/config.js";
 import { analyzeFile, wavDurationOf } from "../public/js/analyze.js";
-import { judge } from "../public/js/judge.js";
+import { judge, appVersion } from "../public/js/judge.js";
 import { sniffFormat } from "../public/js/sniff.js";
 import { makeWav, asFile, vocalLike, noiseSource } from "./wavgen.js";
 
@@ -238,8 +238,10 @@ test("休みのない音源では、歌っていないところを見つけら�
   const bytes = makeWav({ seconds: 20, signal: (f, c, sr) => 0.3 * Math.sin((2 * Math.PI * 220 * f) / sr) });
   const { result } = await run(bytes);
   const n = stageOf(result, "noise");
-  assert.equal(n.outcome, "notFound");
+  assert.equal(n.outcome, "noQuiet");
   assert.equal(n.stage, "skip");
+  assert.match(n.detail, /^未測定/);
+  assert.equal(result.measures.noise_dbfs, null);
   assert.equal(stageOf(result, "cueing").outcome, "startsAtTop");
 });
 
@@ -357,4 +359,125 @@ test("ノイズ源は決まった順に並ぶ", () => {
   const a = noiseSource(3);
   const b = noiseSource(3);
   assert.equal(a(), b());
+});
+
+/* ---------------- 声の無い区間の雑音（拡張①） ---------------- */
+
+test("雑音は声の無い区間だけで測る（歌の静かなところに引っぱられない）", async () => {
+  // 雑音の振幅 0.0003 の一様ノイズ → 実効値は約 −75.2dBFS
+  const bytes = makeWav({ seconds: 40, signal: vocalLike({ startSec: 3, noiseAmp: 0.0003, phraseSec: 3, gapSec: 1.5 }) });
+  const { result } = await run(bytes);
+  const n = stageOf(result, "noise");
+  assert.equal(n.outcome, "ok");
+  assert.ok(Math.abs(result.measures.noise_dbfs - -75.2) < 2, `noise ${result.measures.noise_dbfs}`);
+  assert.equal(result.measures.noise_excluded, false);
+});
+
+test("声の無い区間が完全な無音なら、ゲートや編集の跡として未測定にする", async () => {
+  const bytes = makeWav({ seconds: 30, signal: vocalLike({ startSec: 3, noiseAmp: 0, phraseSec: 3, gapSec: 1.5 }) });
+  const { result } = await run(bytes);
+  const n = stageOf(result, "noise");
+  assert.equal(n.outcome, "zeroOnly");
+  assert.equal(n.stage, "skip");
+  assert.equal(result.measures.noise_dbfs, null);
+  assert.equal(result.measures.noise_excluded, true);
+});
+
+test("書き出しで入った冒頭の完全な無音は外し、外したことを書く", async () => {
+  const sig = vocalLike({ startSec: 12, noiseAmp: 0.0003, phraseSec: 3, gapSec: 1.5 });
+  const bytes = makeWav({ seconds: 40, signal: (f, c, sr) => (f / sr < 10 ? 0 : sig(f, c, sr)) });
+  const { result } = await run(bytes);
+  const n = stageOf(result, "noise");
+  assert.equal(n.outcome, "ok");
+  assert.equal(result.measures.noise_excluded, true);
+  assert.equal(n.notes[0], config.items.find((i) => i.id === "noise").excludedNote);
+});
+
+/* ---------------- 部屋の響き（拡張①） ---------------- */
+
+const roomOf = async (tailRt60) => {
+  const bytes = makeWav({
+    seconds: 40,
+    signal: vocalLike({ startSec: 2, phraseSec: 2, gapSec: 1.5, tailRt60, noiseAmp: 0.0003 }),
+  });
+  return (await run(bytes)).result;
+};
+
+test("声がすぐ消える録音は「響き：少ない」", async () => {
+  const r = await roomOf(0);
+  assert.equal(stageOf(r, "room").outcome, "low");
+  assert.equal(r.measures.room, "low");
+});
+
+test("声のあとに 1.2秒かけて消える響きが残る録音は「響き：多い」（段階2）", async () => {
+  const r = await roomOf(1.2);
+  const room = stageOf(r, "room");
+  assert.equal(room.outcome, "high");
+  assert.equal(room.stage, 2);
+});
+
+test("雑音が大きめの部屋でも、響きの長さを取り違えない", async () => {
+  const bytes = makeWav({
+    seconds: 40,
+    signal: vocalLike({ startSec: 2, phraseSec: 2, gapSec: 1.5, tailRt60: 1.2, noiseAmp: 0.002 }),
+  });
+  const { result } = await run(bytes);
+  assert.equal(stageOf(result, "room").outcome, "high");
+});
+
+test("0.6秒くらいで消える響きは「普通」", async () => {
+  const r = await roomOf(0.6);
+  assert.equal(stageOf(r, "room").outcome, "normal");
+});
+
+test("フレーズの終わりが少なすぎると、響きは未測定", async () => {
+  const bytes = makeWav({ seconds: 12, signal: vocalLike({ startSec: 1, phraseSec: 10, gapSec: 1 }) });
+  const { result } = await run(bytes);
+  assert.equal(stageOf(result, "room").outcome, "notMeasured");
+  assert.equal(result.measures.room, null);
+});
+
+/* ---------------- 記録用の数値 ---------------- */
+
+test("記録用の数値（measures）は列名どおりに並ぶ", async () => {
+  const sig = vocalLike({ startSec: 2, amp: 1.6 });
+  const bytes = makeWav({ bits: 16, seconds: 12, signal: sig });
+  const { result } = await run(bytes);
+  const m = result.measures;
+  assert.equal(m.format, "wav");
+  assert.equal(m.sample_rate, 48000);
+  assert.equal(m.bit_depth, "16bit");
+  assert.equal(m.channels, 1);
+  assert.equal(m.duration_sec, 12);
+  assert.equal(m.peak_dbfs, 0);
+  const clipCount = Number(/(\d+) か所/.exec(stageOf(result, "clipping").detail)[1]);
+  assert.ok(m.clip_samples >= clipCount * 4, `${m.clip_samples} samples / ${clipCount} places`);
+  assert.equal(result.stages.clipping, 2);
+});
+
+test("wav 以外の記録用の数値は形式だけ", async () => {
+  const bytes = new Uint8Array([...new TextEncoder().encode("ID3"), 4, 0, 0, 0, 0, 0, 0]);
+  const { result } = await run(bytes, "voice.mp3");
+  assert.deepEqual(result.measures, {
+    format: "mp3",
+    sample_rate: null,
+    bit_depth: null,
+    channels: null,
+    peak_dbfs: null,
+    clip_samples: null,
+    noise_dbfs: null,
+    noise_excluded: null,
+    room: null,
+    duration_sec: null,
+  });
+});
+
+test("判定の版は、しきい値を変えると変わり、文言を変えても変わらない", () => {
+  const base = appVersion(config);
+  const textChanged = structuredClone(config);
+  textChanged.items.find((i) => i.id === "level").outcomes.ok.detail = "別の文言";
+  assert.equal(appVersion(textChanged), base);
+  const thresholdChanged = structuredClone(config);
+  thresholdChanged.items.find((i) => i.id === "level").maxDb = -2;
+  assert.notEqual(appVersion(thresholdChanged), base);
 });
