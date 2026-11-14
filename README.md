@@ -189,31 +189,26 @@ PR のブランチは、Cloudflare が試し用の URL（Preview）に出しま�
 
 ### 記録の準備（初回のみ）
 
-`record.turnstileSiteKey` が空のあいだは、記録の欄は画面に出ません。次の順に設定します。
+`record.turnstileSiteKey` が空のあいだは、記録の欄は画面に出ません。次の手順は 2026-11-14 に済んでいます（作り直すときのために残しています）。
 
-**1. データベース（D1）**
+**1. データベース（D1）** … 済み
 
-`wrangler.jsonc` に `database_id` を書いていないので、**初めてデプロイしたときに、`reccheck` という名前の D1 が自動で作られて繋がります**。デプロイのログにこう出れば成功です。
+初めてのデプロイで、`reccheck` という名前の D1 が自動で作られました。その ID を `wrangler.jsonc` の `database_id` に書いてあるので、以後のデプロイはこのデータベースに繋がります。デプロイのログにこう出ていれば繋がっています。
 
 ```
 env.DB (reccheck)          D1 Database
 ```
 
-もしデプロイが D1 のところで失敗したら、手で作って繋ぎます。
+データベースを作り直したとき（消してしまったときなど）は、繋ぎ直します。
 
 1. Cloudflare ダッシュボード → **ストレージとデータベース** → **D1** → **作成**、名前は `reccheck`
 2. 出てきた **データベースID** をコピー
-3. https://github.com/40HzP/reccheck/edit/main/wrangler.jsonc を開き、`"database_name": "reccheck"` の次の行に `"database_id": "コピーしたID"` を足す（前の行の末尾にカンマ）
+3. https://github.com/40HzP/reccheck/edit/main/wrangler.jsonc を開き、`"database_id"` の中身をコピーした ID に差し替えて Commit
+   **引用符 `"` は消さないでください。** 中身だけを入れ替えます
 
-```jsonc
-{
-  "binding": "DB",
-  "database_name": "reccheck",
-  "database_id": "a1b2c3d4-...."
-}
-```
+表は、次に誰かが記録したときに自動で作られます。
 
-**2. 迷惑送信よけ（Turnstile）**
+**2. 迷惑送信よけ（Turnstile）** … 済み
 
 1. ダッシュボードの左メニュー **Turnstile** → **ウィジェットを追加**
 2. 名前は何でも構いません（例：`reccheck`）。ドメインに `reccheck.40hzp.com` を入れて作成
