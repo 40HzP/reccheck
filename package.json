@@ -1,0 +1,9 @@
+{
+  "name": "reccheck",
+  "private": true,
+  "type": "module",
+  "description": "歌ってみたのボーカル音源を、MIXに出す前にブラウザの中で確認するサイト",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

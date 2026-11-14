@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>歌ってみた録音チェッカー | 40HzP</title>
+<meta name="description" content="録ったボーカルのファイルを、MIXに出す前に確認できます。形式・頭出し・音割れなどをその場で判定し、直し方を1行で返します。ファイルはどこにも送りません。">
+<!-- 試作・検証のあいだは検索結果に出さない。公開するときにこの1行を消す（README「公開するとき」）。 -->
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://reccheck.40hzp.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="40HzP">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:title" content="歌ってみた録音チェッカー">
+<meta property="og:description" content="録ったボーカルのファイルを、MIXに出す前に確認できます。ファイルはどこにも送りません。">
+<meta property="og:url" content="https://reccheck.40hzp.com/">
+<meta property="og:image" content="https://reccheck.40hzp.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="歌ってみた録音チェッカー。MIXに出す前に、録ったボーカルを確認する。">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@40HzP">
+<meta name="theme-color" content="#efeef2">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/js/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">本文へ移動</a>
+
+<main id="main" class="page">
+  <header class="page-head">
+    <p class="eyebrow">MIXに出す前のセルフチェック</p>
+    <h1 class="page-head__title">歌ってみた録音チェッカー</h1>
+    <p class="prose">録ったボーカルのファイルを選ぶと、形式・頭出し・音割れなどをその場で確かめて、直し方を1行で返します。</p>
+    <ul class="promises">
+      <li>ファイルはこの端末の中で読むだけです。どこにも送らず、保存もしません。</li>
+      <li>歌の上手い下手は見ません。見るのはデータの形だけです。</li>
+    </ul>
+  </header>
+
+  <section class="pickers" aria-label="ファイルを選ぶ">
+    <div class="picker" id="vocal-picker">
+      <input class="picker__input" id="vocal-input" type="file" accept="audio/*,.wav,.mp3,.m4a">
+      <label class="picker__drop" for="vocal-input">
+        <span class="picker__title">ボーカル<span class="picker__tag picker__tag--req">必須</span></span>
+        <span class="picker__file" data-slot="file">ファイルを選ぶ</span>
+        <span class="picker__help" data-slot="help">書き出したボーカルのファイル。ドラッグしても入ります</span>
+      </label>
+    </div>
+
+    <div class="picker" id="inst-picker">
+      <input class="picker__input" id="inst-input" type="file" accept="audio/*,.wav,.mp3,.m4a">
+      <label class="picker__drop" for="inst-input">
+        <span class="picker__title">伴奏（inst）<span class="picker__tag">任意</span></span>
+        <span class="picker__file" data-slot="file">ファイルを選ぶ</span>
+        <span class="picker__help" data-slot="help">入れると、頭出しを長さで比べられます</span>
+      </label>
+      <button type="button" class="linkbtn" id="inst-clear" hidden>伴奏を外す</button>
+    </div>
+  </section>
+
+  <!-- 読み上げ用。進み具合の%は読み上げず、始まりと終わりだけ知らせる -->
+  <p class="visually-hidden" id="live" role="status" aria-live="polite"></p>
+
+  <div class="status" id="status" hidden>
+    <p class="status__text" id="status-text"></p>
+    <progress class="status__bar" id="status-bar" max="1" value="0" aria-labelledby="status-text"></progress>
+  </div>
+
+  <p class="error" id="error" role="alert" hidden></p>
+
+  <section class="result" id="result" aria-labelledby="result-heading" tabindex="-1" hidden>
+    <h2 class="h2" id="result-heading">結果</h2>
+    <p class="result__file" id="result-file"></p>
+    <p class="summary" id="result-summary"></p>
+    <div id="result-groups"></div>
+    <ul class="notes" id="result-notes"></ul>
+  </section>
+
+  <section class="next" id="next" aria-labelledby="next-heading" hidden>
+    <h2 class="h2" id="next-heading"></h2>
+    <ul class="exits" id="exits"></ul>
+  </section>
+
+  <noscript>
+    <p class="error">このページは JavaScript を使ってファイルを読みます。ブラウザの設定で JavaScript を有効にしてください。</p>
+  </noscript>
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__inner" id="footer"></div>
+</footer>
+</body>
+</html>

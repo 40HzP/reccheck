@@ -1,0 +1,12 @@
+{
+  // 静的ファイルだけのWorker。public/ の中身がそのまま公開される
+  "name": "reccheck",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public"
+  },
+  // デプロイ時に reccheck.40hzp.com を自動でこのWorkerに割り当てる
+  "routes": [
+    { "pattern": "reccheck.40hzp.com", "custom_domain": true }
+  ]
+}
