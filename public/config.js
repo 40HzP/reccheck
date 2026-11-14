@@ -27,7 +27,7 @@ export default {
     1: "そのまま送れます",
     2: "直すともっと良くなります",
     3: "このままだと受け取れません",
-    check: "確認してください",
+    check: "システムでは判断しきれません",
     skip: "確認できません",
   },
 
@@ -294,7 +294,7 @@ export default {
         other: {
           stage: 2,
           detail: "{rate}",
-          fix: "書き出しの設定で 48kHz を選んでください",
+          fix: "録音時のプロジェクト設定と書き出しの設定で 48kHz を選んでください",
         },
       },
     },
@@ -313,7 +313,7 @@ export default {
         other: {
           stage: 2,
           detail: "{depth}",
-          fix: "書き出しの設定で 32bit float か 24bit を選んでください",
+          fix: "録音時のプロジェクト設定と書き出しの設定で 32bit float か 24bit を選んでください",
         },
       },
     },
