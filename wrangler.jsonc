@@ -24,7 +24,13 @@
   // デプロイ時に reccheck.40hzp.com を自動でこのWorkerに割り当てる
   "routes": [
     { "pattern": "reccheck.40hzp.com", "custom_domain": true }
-  ]
+  ],
+
+  // main 以外のブランチ（PR）は、Cloudflare が `npx wrangler preview` で
+  // 試し用の URL に出す。そのコマンドはこのブロックが無いと止まる。
+  // 中を空にしているので、試し用の URL には D1 が繋がらない
+  // （本番の記録に試しのデータが混ざらない。記録は 503 で断られる）。
+  "previews": {}
 
   // TURNSTILE_SECRET_KEY は secret として Cloudflare の画面で登録する。ここには書かない。
 }
